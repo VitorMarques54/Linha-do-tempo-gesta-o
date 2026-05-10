@@ -396,10 +396,16 @@
 
     /* ===================== PRINT ===================== */
     @media print {
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
       .toolbar, .card-actions, .thumb-input, .thumb-hint, .toast, .modal-overlay { display:none !important; }
-      body { background:white !important; color:black !important; }
+      body { background: var(--bg) !important; color: var(--text-primary) !important; }
       .page { padding:1cm; max-width:100%; }
-      .exam-card, .birth-card { break-inside:avoid; page-break-inside:avoid; }
+      .exam-card, .birth-card { break-inside:avoid; page-break-inside:avoid; border: 1px solid var(--border) !important; }
+      .timeline-spine { display: block !important; }
     }
   </style>
 </head>
