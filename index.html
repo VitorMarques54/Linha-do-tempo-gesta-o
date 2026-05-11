@@ -192,8 +192,7 @@
     .info-value { font-weight: 500; color: var(--text); }
 
     /* ===== TIMELINE ===== */
-    .timeline-section { }
-    .section-title {
+      .section-title {
       font-family: 'Cormorant Garamond', serif;
       font-size: 22px;
       color: var(--primary);
@@ -1093,13 +1092,8 @@ function applyThemeColors(primary, secondary) {
 }
 
 // ==================== PDF EXPORT ====================
-async function exportPDF() {
-  const timelineItems = document.querySelectorAll('.timeline-item');
-  if (timelineItems.length === 0 && !state.patient.name) {
-    alert('Adicione pelo menos um registro antes de exportar.');
-    return;
-  }
 
+async function exportPDF() {
   const loading = document.getElementById('pdf-loading');
   loading.classList.add('show');
 
@@ -1110,79 +1104,131 @@ async function exportPDF() {
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
     const margin = 10;
-    let currentY = 15;
+    const bgColor = '#fdfcfa'; // Cor de fundo da página
+    let currentY = 0;
 
-    // 1. TÍTULO E CABEÇALHO (Manual para garantir nitidez)
-    function hex2rgb(hex) {
-      const h = hex.replace('#', '');
-      return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
-    }
-    const rgb = hex2rgb(state.colors.primary);
-    
-    doc.setFillColor(rgb[0], rgb[1], rgb[2]);
-    doc.rect(0, 0, pageW, 40, 'F');
-    
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.text('Diário da Gestação', pageW/2, 20, { align: 'center' });
-    
-    doc.setFontSize(12);
-    doc.text(state.patient.name || 'Paciente', pageW/2, 28, { align: 'center' });
-    doc.setFontSize(9);
-    doc.text((state.clinic.name || '').toUpperCase(), pageW/2, 34, { align: 'center' });
+    // Função interna para capturar elementos com segurança
+    async function captureElement(selector, hideSelector = null) {
+      const el = document.querySelector(selector);
+      if (!el) return null;
 
-    currentY = 50;
-
-    // 2. CAPTURAR CADA CARD DA TIMELINE
-    // Vamos iterar por cada card e transformar em imagem para o PDF
-    for (let i = 0; i < timelineItems.length; i++) {
-      const item = timelineItems[i];
-      
-      // Esconde os botões de ação (lixeira/upload) antes de tirar a "foto"
-      const actions = item.querySelector('.card-actions');
-      if(actions) actions.style.display = 'none';
-
-      const canvas = await html2canvas(item, {
-        scale: 2, // Aumenta a qualidade
+      return await html2canvas(el, {
+        scale: 2,
         useCORS: true,
-        backgroundColor: '#ffffff'
+        backgroundColor: bgColor, // Evita fundo preto em áreas vazias
+        logging: false,
+        onclone: (clonedDoc) => {
+          const clonedEl = clonedDoc.querySelector(selector);
+          
+          // CORREÇÃO PARA O BANNER: Remove gradientes e transparências que causam o erro preto
+          if (selector === '.info-banner') {
+            clonedEl.style.background = '#f8f4f2'; // Uma cor sólida clara (creme)
+            clonedEl.style.backgroundImage = 'none';
+            clonedEl.style.boxShadow = 'none';
+          }
+          
+          // Esconde botões no clone
+          if (hideSelector) {
+            const btn = clonedEl.querySelector(hideSelector);
+            if (btn) btn.style.display = 'none';
+          }
+        }
       });
-
-      if(actions) actions.style.display = 'flex'; // Mostra de volta no site
-
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-      const imgProps = doc.getImageProperties(imgData);
-      const imgW = pageW - (margin * 2);
-      const imgH = (imgProps.height * imgW) / imgProps.width;
-
-      // Verifica se o card cabe na página atual, se não, cria uma nova
-      if (currentY + imgH > pageH - 20) {
-        doc.addPage();
-        currentY = 15;
-      }
-
-      doc.addImage(imgData, 'JPEG', margin, currentY, imgW, imgH);
-      currentY += imgH + 10; // Espaço entre os cards
     }
 
-    // 3. RODAPÉ
+    // 1. CAPTURAR HEADER
+    const canvasHeader = await captureElement('.header', '.header-actions');
+    if (canvasHeader) {
+      const imgData = canvasHeader.toDataURL('image/jpeg', 0.9);
+      const imgH = (canvasHeader.height * pageW) / canvasHeader.width;
+      doc.addImage(imgData, 'JPEG', 0, 0, pageW, imgH);
+      currentY = imgH + 10;
+    }
+
+    // 2. CAPTURAR INFO BANNER (O que estava dando erro)
+    const canvasBanner = await captureElement('.info-banner');
+    if (canvasBanner) {
+      const imgW = pageW - (margin * 2);
+      const imgH = (canvasBanner.height * imgW) / canvasBanner.width;
+      const imgData = canvasBanner.toDataURL('image/jpeg', 0.9);
+      doc.addImage(imgData, 'JPEG', margin, currentY, imgW, imgH);
+      currentY += imgH + 8;
+    }
+
+    // 3. CAPTURAR CARD PACIENTE
+    if (document.getElementById('patient-card').classList.contains('visible')) {
+      const canvasPatient = await captureElement('#patient-card');
+      if (canvasPatient) {
+        const imgW = pageW - (margin * 2);
+        const imgH = (canvasPatient.height * imgW) / canvasPatient.width;
+        const imgData = canvasPatient.toDataURL('image/jpeg', 0.9);
+        doc.addImage(imgData, 'JPEG', margin, currentY, imgW, imgH);
+        currentY += imgH + 8;
+      }
+    }
+
+    // 4. LINHA DO TEMPO (Cards individuais)
+    const timelineItems = document.querySelectorAll('.timeline-item');
+    for (let i = 0; i < timelineItems.length; i++) {
+      const canvasItem = await captureElement(`.timeline-item[data-id="${timelineItems[i].dataset.id}"]`, '.card-actions');
+      if (canvasItem) {
+        const imgW = pageW - (margin * 2);
+        const imgH = (canvasItem.height * imgW) / canvasItem.width;
+        
+        // Verifica se precisa de nova página
+        if (currentY + imgH > pageH - 15) {
+          doc.addPage();
+          currentY = 15;
+        }
+
+        const imgData = canvasItem.toDataURL('image/jpeg', 0.9);
+        doc.addImage(imgData, 'JPEG', margin, currentY, imgW, imgH);
+        currentY += imgH + 8;
+      }
+    }
+
+    // Rodapé
     const totalPages = doc.internal.getNumberOfPages();
     for (let j = 1; j <= totalPages; j++) {
       doc.setPage(j);
       doc.setFontSize(8);
       doc.setTextColor(150, 150, 150);
-      doc.text(`${state.clinic.footer || state.clinic.name}  |  Página ${j} de ${totalPages}`, pageW/2, pageH - 10, { align: 'center' });
+      doc.text(`${state.clinic.footer || state.clinic.name} | Página ${j}`, pageW/2, pageH - 8, { align: 'center' });
     }
 
     doc.save(`Diario-Gestacional-${state.patient.name}.pdf`);
 
   } catch (err) {
     console.error("Erro no PDF:", err);
-    alert('Erro ao gerar PDF. Certifique-se de que as fotos não são excessivamente grandes.');
+    alert('Erro ao gerar o arquivo. Tente novamente.');
   } finally {
     loading.classList.remove('show');
   }
 }
+
+// Função auxiliar para converter Hex em Array RGB
+function hexToRgbArray(hex) {
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16)
+  ];
+}
+
+
+// Função auxiliar para converter Hex em Array RGB
+function hexToRgbArray(hex) {
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16)
+  ];
+}
+
 // ==================== UTILS ====================
 function formatDate(dateStr) {
   if (!dateStr) return '';
